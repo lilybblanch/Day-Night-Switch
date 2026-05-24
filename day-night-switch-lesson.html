@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build a Day / Night Switch — a NextWork project by Lily Blanch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ===== THEME TOKENS (these are what the switch animates) ===== */
+  :root[data-theme="light"]{
+    --bg:#F4EDE1; --bg-2:#FBF7EF; --panel:#FFFFFF; --panel-2:#F8F2E8;
+    --text:#1B1918; --dim:#76695F; --faint:#A99C8E;
+    --line:rgba(27,25,24,.10); --line-2:rgba(27,25,24,.16);
+    --accent:#E5631B; --accent-soft:rgba(229,99,27,.12);
+    --green:#2E865F; --green-soft:rgba(61,174,124,.14);
+    --sky-tint:rgba(120,190,240,.16);
+  }
+  :root[data-theme="dark"]{
+    --bg:#15140F; --bg-2:#1B1918; --panel:#222019; --panel-2:#2A2620;
+    --text:#F2EADB; --dim:#A99B8D; --faint:#6E6357;
+    --line:rgba(242,234,219,.10); --line-2:rgba(242,234,219,.16);
+    --accent:#FF8A45; --accent-soft:rgba(255,138,69,.16);
+    --green:#5FD08C; --green-soft:rgba(95,208,140,.14);
+    --sky-tint:rgba(40,42,90,.28);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:"Hanken Grotesk",-apple-system,sans-serif;line-height:1.6;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;
+    transition:background-color .7s ease,color .7s ease;
+  }
+  /* soft sky glow in the corner that shifts with the theme */
+  .ambient{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .ambient::before{content:"";position:absolute;top:-20%;right:-10%;width:70vw;height:70vw;border-radius:50%;
+    background:radial-gradient(circle,var(--sky-tint),transparent 65%);filter:blur(30px);
+    transition:background .7s ease}
+  .wrap{position:relative;z-index:1;max-width:880px;margin:0 auto;padding:0 26px}
+
+  a{color:inherit}
+  .mono{font-family:"JetBrains Mono",monospace}
+  .serif{font-family:"Fraunces",serif;font-weight:400}
+  .ital{font-style:italic}
+
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--accent);display:inline-flex;align-items:center;gap:10px}
+  .eyebrow::before{content:"";width:26px;height:1px;background:var(--accent)}
+
+  h1{font-family:"Fraunces",serif;font-weight:400;letter-spacing:-.02em;line-height:1.04;
+    font-size:clamp(38px,6vw,66px)}
+  h1 em{font-style:italic;color:var(--accent)}
+  h2{font-family:"Fraunces",serif;font-weight:400;letter-spacing:-.015em;line-height:1.1;
+    font-size:clamp(26px,3.6vw,38px);margin:0 0 14px}
+  h2 em{font-style:italic;color:var(--accent)}
+  h3{font-size:19px;font-weight:600;letter-spacing:-.01em}
+  p{color:var(--dim);font-size:17px}
+  p b,p strong{color:var(--text);font-weight:600}
+
+  /* ===================================================== */
+  /* ================  THE DAY / NIGHT SWITCH  =========== */
+  /* ===================================================== */
+  .stage{display:flex;flex-direction:column;align-items:center;gap:22px;margin:18px 0 6px}
+
+  .switch{
+    --w:230px; --h:100px; --pad:10px; --thumb:80px;
+    --travel:calc(var(--w) - var(--thumb) - var(--pad)*2); /* 130px */
+    position:relative; width:var(--w); height:var(--h);
+    border:none; padding:0; border-radius:999px; cursor:pointer; overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+    box-shadow:inset 0 2px 8px rgba(0,0,0,.28), 0 22px 48px -16px rgba(0,0,0,.55);
+    transition:box-shadow .7s ease;
+  }
+  .switch:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+
+  /* two stacked skies that cross-fade */
+  .sky{position:absolute;inset:0;border-radius:inherit;transition:opacity .8s ease}
+  .sky.day{background:linear-gradient(165deg,#5fb0ec 0%,#a9e0ff 100%);opacity:1}
+  .sky.night{background:linear-gradient(165deg,#15163a 0%,#2c2b58 100%);opacity:0}
+  [data-theme="dark"] .sky.day{opacity:0}
+  [data-theme="dark"] .sky.night{opacity:1}
+
+  /* stars — fade + scale in, with a gentle perpetual twinkle */
+  .stars{position:absolute;inset:0;opacity:0;transform:scale(.9);
+    transition:opacity .6s ease .15s, transform .6s ease .15s}
+  [data-theme="dark"] .stars{opacity:1;transform:scale(1)}
+  .star{position:absolute;background:#fff;border-radius:50%;
+    box-shadow:0 0 6px rgba(255,255,255,.9);animation:twinkle 3.2s ease-in-out infinite}
+  @keyframes twinkle{0%,100%{opacity:.45;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+
+  /* clouds — drift gently, then slide out + fade on the way to night */
+  .clouds{position:absolute;inset:0;
+    transition:transform .75s cubic-bezier(.66,-0.2,.3,1.2), opacity .5s ease}
+  [data-theme="dark"] .clouds{transform:translateX(130px) translateY(10px);opacity:0}
+  .cloud{position:absolute;background:#fff;border-radius:999px;
+    box-shadow:0 4px 8px rgba(40,80,120,.16);animation:drift 7s ease-in-out infinite}
+  .cloud::before,.cloud::after{content:"";position:absolute;background:#fff;border-radius:50%}
+  .c1{top:28px;right:26px;width:48px;height:17px;animation-delay:-1s}
+  .c1::before{width:24px;height:24px;left:6px;top:-11px}
+  .c1::after{width:18px;height:18px;right:6px;top:-8px}
+  .c2{top:56px;right:62px;width:34px;height:13px;opacity:.85;animation-delay:-3.5s}
+  .c2::before{width:17px;height:17px;left:4px;top:-8px}
+  .c2::after{width:13px;height:13px;right:4px;top:-6px}
+  @keyframes drift{0%,100%{transform:translateX(0)}50%{transform:translateX(-7px)}}
+
+  /* the thumb: a sun that becomes a moon */
+  .thumb{position:absolute;top:var(--pad);left:var(--pad);
+    width:var(--thumb);height:var(--thumb);border-radius:50%;
+    background:radial-gradient(circle at 35% 32%,#ffe588,#ffb43c 78%);
+    box-shadow:0 0 0 6px rgba(255,206,90,.25), 0 0 30px 8px rgba(255,176,60,.6),
+               inset -5px -7px 12px rgba(214,124,18,.4);
+    transition:transform .75s cubic-bezier(.66,-0.32,.28,1.34),
+               background .65s ease, box-shadow .65s ease;
+  }
+  [data-theme="dark"] .thumb{
+    transform:translateX(var(--travel));
+    background:radial-gradient(circle at 38% 34%,#f7f4ea,#cdc9bc 80%);
+    box-shadow:0 0 0 6px rgba(214,222,242,.16), 0 0 26px 5px rgba(190,205,235,.45),
+               inset -5px -7px 12px rgba(120,126,140,.42);
+  }
+  /* soft sun halo that breathes — disappears at night */
+  .thumb::after{content:"";position:absolute;inset:-12px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,200,90,.45),transparent 68%);
+    animation:breathe 3.8s ease-in-out infinite;transition:opacity .6s ease;z-index:-1}
+  [data-theme="dark"] .thumb::after{opacity:0}
+  @keyframes breathe{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.14);opacity:1}}
+
+  /* craters — invisible on the sun, fade in once it's a moon */
+  .crater{position:absolute;border-radius:50%;background:transparent;
+    transition:background .55s ease .18s, box-shadow .55s ease .18s}
+  [data-theme="dark"] .crater{background:rgba(168,170,182,.55);
+    box-shadow:inset 1.5px 1.5px 2px rgba(96,98,112,.6)}
+  .cr1{width:16px;height:16px;top:20px;left:18px}
+  .cr2{width:11px;height:11px;top:44px;left:40px}
+  .cr3{width:8px;height:8px;top:26px;left:48px}
+
+  .mode-label{font-family:"JetBrains Mono",monospace;font-size:13px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:9px}
+  .mode-label .pip{width:8px;height:8px;border-radius:50%;background:var(--accent);transition:background .6s ease}
+  .flip-hint{font-size:13px;color:var(--faint)}
+
+  /* ===================================================== */
+  section{padding:46px 0;border-top:1px solid var(--line)}
+  .hero{padding:54px 0 34px;border:none;text-align:center}
+  .lede{font-size:19px;color:var(--dim);max-width:560px;margin:22px auto 0}
+
+  .chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:30px}
+  .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-2);
+    border-radius:999px;padding:8px 14px;font-family:"JetBrains Mono",monospace;
+    font-size:12px;letter-spacing:.04em;color:var(--dim)}
+  .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
+
+  .step{display:flex;gap:20px;margin-top:30px}
+  .step .num{flex:none;width:38px;height:38px;border-radius:11px;background:var(--accent-soft);
+    color:var(--accent);font-family:"JetBrains Mono",monospace;font-weight:500;font-size:15px;
+    display:flex;align-items:center;justify-content:center}
+  .step .body{flex:1;min-width:0}
+  .step .body h3{margin-bottom:6px}
+  .step .body p{font-size:16px}
+
+  /* anatomy list */
+  .anatomy{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px}
+  .part{border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:var(--panel);
+    transition:background .7s ease,border-color .7s ease}
+  .part .k{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:5px}
+  .part .d{font-size:14.5px;color:var(--dim)}
+
+  /* code blocks */
+  .code{position:relative;margin-top:16px;border-radius:14px;overflow:hidden;
+    border:1px solid rgba(255,255,255,.08);background:#1c1b24}
+  .code pre{margin:0;padding:18px 18px;overflow-x:auto}
+  .code code{font-family:"JetBrains Mono",monospace;font-size:13px;line-height:1.7;color:#e7e4f0;white-space:pre}
+  .tok-sel{color:#ffb37a} .tok-prop{color:#8fd0ff} .tok-val{color:#c5e8a0}
+  .tok-com{color:#7d7a90;font-style:italic} .tok-at{color:#f0a6d6}
+  .copy{position:absolute;top:10px;right:10px;border:1px solid rgba(255,255,255,.16);
+    background:rgba(255,255,255,.06);color:#cfcce0;font-family:"JetBrains Mono",monospace;
+    font-size:11px;letter-spacing:.06em;padding:6px 10px;border-radius:8px;cursor:pointer;transition:.25s}
+  .copy:hover{background:rgba(255,255,255,.14);color:#fff}
+
+  .callout{border:1px solid var(--line-2);border-radius:16px;padding:24px 26px;margin-top:26px;
+    background:var(--panel-2);transition:background .7s ease,border-color .7s ease}
+  .callout .tag{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+  .callout p{font-size:16px}
+
+  .series{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}
+  .series .it{display:flex;gap:11px;align-items:flex-start;border:1px solid var(--line);border-radius:12px;
+    padding:13px 15px;background:var(--panel);transition:background .7s ease,border-color .7s ease}
+  .series .it .n{font-family:"JetBrains Mono",monospace;color:var(--accent);font-size:13px;flex:none}
+  .series .it .t{font-size:14.5px}
+  .series .it .t b{color:var(--text);font-weight:600}
+
+  .beats{margin-top:20px;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .beat{display:flex;gap:16px;padding:16px 20px;border-bottom:1px solid var(--line);
+    background:var(--panel);transition:background .7s ease,border-color .7s ease}
+  .beat:last-child{border-bottom:none}
+  .beat .bn{font-family:"Fraunces",serif;font-style:italic;font-size:24px;color:var(--accent);flex:none;width:30px;line-height:1.2}
+  .beat .bt b{color:var(--text);font-weight:600} .beat .bt{font-size:15.5px;color:var(--dim)}
+
+  .footer{text-align:center;padding:40px 0;color:var(--faint);
+    font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.05em;border-top:1px solid var(--line)}
+  .footer a{color:var(--accent);text-decoration:none}
+
+  @media(max-width:640px){
+    .anatomy,.series{grid-template-columns:1fr}
+    .step{gap:14px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important}
+    .sky,.thumb,.clouds,.stars,.crater,body,.part,.callout{transition:opacity .25s ease, background-color .25s ease, color .25s ease !important}
+    .thumb{transition:transform .25s ease, background .25s ease, box-shadow .25s ease, opacity .25s ease !important}
+  }
+</style>
+</head>
+<body>
+<div class="ambient"></div>
+
+<div class="wrap">
+
+  <!-- HERO + LIVE SWITCH -->
+  <header class="hero">
+    <span class="eyebrow">NextWork project · interaction design</span>
+    <h1 style="margin-top:22px">Build a <em>day / night</em> switch<br>that actually feels alive.</h1>
+    <p class="lede">A theme toggle where a sun and clouds give way to a moon and stars — and the whole page breathes with it. Flip it, then scroll to see exactly how it's made.</p>
+
+    <div class="stage">
+      <button class="switch" id="switch" role="switch" aria-checked="false" aria-label="Toggle day and night">
+        <span class="sky day"></span>
+        <span class="sky night"></span>
+        <span class="stars">
+          <span class="star" style="top:24px;left:38px;width:3px;height:3px;animation-delay:0s"></span>
+          <span class="star" style="top:52px;left:66px;width:2px;height:2px;animation-delay:.6s"></span>
+          <span class="star" style="top:34px;left:96px;width:2.5px;height:2.5px;animation-delay:1.1s"></span>
+          <span class="star" style="top:66px;left:50px;width:2px;height:2px;animation-delay:1.6s"></span>
+          <span class="star" style="top:20px;left:118px;width:2px;height:2px;animation-delay:.3s"></span>
+          <span class="star" style="top:72px;left:108px;width:3px;height:3px;animation-delay:2s"></span>
+          <span class="star" style="top:44px;left:28px;width:2px;height:2px;animation-delay:1.3s"></span>
+        </span>
+        <span class="clouds">
+          <span class="cloud c1"></span>
+          <span class="cloud c2"></span>
+        </span>
+        <span class="thumb">
+          <span class="crater cr1"></span>
+          <span class="crater cr2"></span>
+          <span class="crater cr3"></span>
+        </span>
+      </button>
+      <div class="mode-label"><span class="pip"></span><span data-theme-label>Day</span> mode</div>
+      <div class="flip-hint">↑ go on, flip it</div>
+    </div>
+  </header>
+
+  <!-- WHAT YOU'RE BUILDING -->
+  <section>
+    <span class="eyebrow">The brief</span>
+    <h2 style="margin-top:16px">What you're building</h2>
+    <p>One button that does two jobs: it switches the page between light and dark, and it tells a little story while it does. The sun slides across and turns into a moon, clouds drift away as stars fade in, and the sky cross-fades from afternoon blue to midnight. <strong>No libraries — just HTML, CSS, and about ten lines of JavaScript.</strong></p>
+    <div class="chips">
+      <span class="chip"><span class="dot"></span> Level · beginner-friendly</span>
+      <span class="chip"><span class="dot"></span> ~30 minutes</span>
+      <span class="chip"><span class="dot"></span> Skills · transforms, transitions, easing</span>
+      <span class="chip"><span class="dot"></span> Ships as · a real, publishable component</span>
+    </div>
+  </section>
+
+  <!-- ANATOMY -->
+  <section>
+    <span class="eyebrow">Step 0</span>
+    <h2 style="margin-top:16px">Name the parts before you animate them</h2>
+    <p>Every smooth interaction starts boring: a stack of plain elements. Animation is just these parts changing one or two properties. Here's the whole switch, taken apart.</p>
+    <div class="anatomy">
+      <div class="part"><div class="k">Track</div><div class="d">The rounded pill. Clips everything inside it with <span class="mono">overflow:hidden</span>.</div></div>
+      <div class="part"><div class="k">Thumb</div><div class="d">The circle that slides. It's the sun in light, the moon in dark.</div></div>
+      <div class="part"><div class="k">Two skies</div><div class="d">A day gradient and a night gradient, stacked — we cross-fade their opacity.</div></div>
+      <div class="part"><div class="k">Clouds</div><div class="d">White pills with two bumps. They drift at rest, then slide out.</div></div>
+      <div class="part"><div class="k">Stars</div><div class="d">Tiny dots that fade in and twinkle forever once it's night.</div></div>
+      <div class="part"><div class="k">Craters</div><div class="d">Three grey circles inside the thumb — transparent on the sun, visible on the moon.</div></div>
+    </div>
+  </section>
+
+  <!-- STEP 1: MARKUP -->
+  <section>
+    <span class="eyebrow">Step 1</span>
+    <h2 style="margin-top:16px">The markup</h2>
+    <p>The state lives in one place: a <span class="mono">data-theme</span> attribute on the <span class="mono">&lt;html&gt;</span> element. Everything else just reacts to it. That single source of truth is what lets the same flip drive the switch <em>and</em> the whole page.</p>
+    <div class="code">
+      <button class="copy" data-copy>copy</button>
+      <pre><code><span class="tok-com">&lt;!-- one attribute controls the whole page --&gt;</span>
+&lt;<span class="tok-sel">html</span> data-theme=<span class="tok-val">"light"</span>&gt;
+
+&lt;<span class="tok-sel">button</span> class=<span class="tok-val">"switch"</span> role=<span class="tok-val">"switch"</span>&gt;
+  &lt;<span class="tok-sel">span</span> class=<span class="tok-val">"sky day"</span>&gt;&lt;/span&gt;
+  &lt;<span class="tok-sel">span</span> class=<span class="tok-val">"sky night"</span>&gt;&lt;/span&gt;
+  &lt;<span class="tok-sel">span</span> class=<span class="tok-val">"stars"</span>&gt; … dots … &lt;/span&gt;
+  &lt;<span class="tok-sel">span</span> class=<span class="tok-val">"clouds"</span>&gt; … clouds … &lt;/span&gt;
+  &lt;<span class="tok-sel">span</span> class=<span class="tok-val">"thumb"</span>&gt;
+    &lt;<span class="tok-sel">span</span> class=<span class="tok-val">"crater"</span>&gt;&lt;/span&gt; ×3
+  &lt;/span&gt;
+&lt;/button&gt;</code></pre>
+    </div>
+  </section>
+
+  <!-- STEP 2: TRACK + SLIDE -->
+  <section>
+    <span class="eyebrow">Step 2</span>
+    <h2 style="margin-top:16px">The track, and the slide</h2>
+    <p>The thumb is positioned <span class="mono">left</span> at rest. We never animate <span class="mono">left</span> — that's slow and janky. Instead we move it with <span class="mono">transform: translateX()</span>, which the browser animates on the GPU. I store the travel distance in a CSS variable so the maths stays readable.</p>
+    <div class="code">
+      <button class="copy" data-copy>copy</button>
+      <pre><code><span class="tok-sel">.switch</span> {
+  <span class="tok-prop">--w</span>: <span class="tok-val">230px</span>; <span class="tok-prop">--thumb</span>: <span class="tok-val">80px</span>; <span class="tok-prop">--pad</span>: <span class="tok-val">10px</span>;
+  <span class="tok-prop">--travel</span>: <span class="tok-val">calc(var(--w) - var(--thumb) - var(--pad)*2)</span>;
+  <span class="tok-prop">overflow</span>: <span class="tok-val">hidden</span>;            <span class="tok-com">/* clip clouds + stars */</span>
+}
+<span class="tok-sel">.thumb</span> {
+  <span class="tok-prop">transform</span>: <span class="tok-val">translateX(0)</span>;     <span class="tok-com">/* sun, on the left */</span>
+}
+<span class="tok-sel">[data-theme="dark"] .thumb</span> {
+  <span class="tok-prop">transform</span>: <span class="tok-val">translateX(var(--travel))</span>;  <span class="tok-com">/* moon, on the right */</span>
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- STEP 3: SUN -> MOON -->
+  <section>
+    <span class="eyebrow">Step 3</span>
+    <h2 style="margin-top:16px">Turning the sun into a moon</h2>
+    <p>The same circle plays both roles. In light it's a warm radial gradient with a glowing box-shadow. In dark we swap to a pale grey gradient, cool the glow, and fade in three craters that were transparent the whole time. Because both states share the element, the browser tweens smoothly between them.</p>
+    <div class="code">
+      <button class="copy" data-copy>copy</button>
+      <pre><code><span class="tok-sel">.thumb</span> {                          <span class="tok-com">/* ☀ sun */</span>
+  <span class="tok-prop">background</span>: <span class="tok-val">radial-gradient(circle at 35% 32%, #ffe588, #ffb43c)</span>;
+  <span class="tok-prop">box-shadow</span>: <span class="tok-val">0 0 30px 8px rgba(255,176,60,.6)</span>;
+}
+<span class="tok-sel">[data-theme="dark"] .thumb</span> {       <span class="tok-com">/* 🌙 moon */</span>
+  <span class="tok-prop">background</span>: <span class="tok-val">radial-gradient(circle at 38% 34%, #f7f4ea, #cdc9bc)</span>;
+  <span class="tok-prop">box-shadow</span>: <span class="tok-val">0 0 26px 5px rgba(190,205,235,.45)</span>;
+}
+<span class="tok-sel">.crater</span> { <span class="tok-prop">background</span>: <span class="tok-val">transparent</span>; }        <span class="tok-com">/* hidden on sun */</span>
+<span class="tok-sel">[data-theme="dark"] .crater</span> { <span class="tok-prop">background</span>: <span class="tok-val">rgba(168,170,182,.55)</span>; }</code></pre>
+    </div>
+  </section>
+
+  <!-- STEP 4: SKY, CLOUDS, STARS -->
+  <section>
+    <span class="eyebrow">Step 4</span>
+    <h2 style="margin-top:16px">Sky, clouds &amp; stars</h2>
+    <p>The two skies cross-fade by flipping opacity. Clouds slide out with <span class="mono">translateX</span> while their opacity drops. Stars do the reverse — fade and scale in. Each lives behind the thumb, so as the moon arrives, the night settles in around it.</p>
+    <div class="code">
+      <button class="copy" data-copy>copy</button>
+      <pre><code><span class="tok-sel">.sky.night</span> { <span class="tok-prop">opacity</span>: <span class="tok-val">0</span>; }
+<span class="tok-sel">[data-theme="dark"] .sky.night</span> { <span class="tok-prop">opacity</span>: <span class="tok-val">1</span>; }   <span class="tok-com">/* cross-fade */</span>
+
+<span class="tok-sel">[data-theme="dark"] .clouds</span> {
+  <span class="tok-prop">transform</span>: <span class="tok-val">translateX(130px)</span>; <span class="tok-prop">opacity</span>: <span class="tok-val">0</span>;   <span class="tok-com">/* drift away */</span>
+}
+<span class="tok-sel">.stars</span> { <span class="tok-prop">opacity</span>: <span class="tok-val">0</span>; }
+<span class="tok-sel">[data-theme="dark"] .stars</span> { <span class="tok-prop">opacity</span>: <span class="tok-val">1</span>; }       <span class="tok-com">/* fade in + twinkle */</span></code></pre>
+    </div>
+  </section>
+
+  <!-- STEP 5: THE FLOWY SECRET -->
+  <section>
+    <span class="eyebrow">Step 5 — the important one</span>
+    <h2 style="margin-top:16px">The secret to making it feel <em>natural</em></h2>
+    <p>Swapping properties is easy. Making it feel <em>alive</em> is the craft, and it comes down to three habits.</p>
+
+    <div class="step">
+      <div class="num">01</div>
+      <div class="body">
+        <h3>Easing with a little overshoot</h3>
+        <p>A linear slide looks mechanical. Real objects have momentum — they overshoot a touch, then settle. A cubic-bézier that dips below 0 and rises past 1 gives the thumb exactly that gentle, springy landing.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">02</div>
+      <div class="body">
+        <h3>Stagger the timings</h3>
+        <p>Nothing in nature happens all at once. The sky fades over <span class="mono">0.8s</span>; the stars wait <span class="mono">0.15s</span> before arriving; the craters wait <span class="mono">0.18s</span> so the moon "becomes" a moon <em>after</em> it lands. Those tiny offsets are what read as organic.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">03</div>
+      <div class="body">
+        <h3>Give it life at rest</h3>
+        <p>Even when no one's touching it, the sun breathes, the clouds drift, and the stars twinkle — looping animations that never stop. Stillness feels dead; gentle motion feels warm.</p>
+      </div>
+    </div>
+
+    <div class="code">
+      <button class="copy" data-copy>copy</button>
+      <pre><code><span class="tok-sel">.thumb</span> {
+  <span class="tok-com">/* the springy landing → "natural" */</span>
+  <span class="tok-prop">transition</span>: <span class="tok-val">transform .75s cubic-bezier(.66, -.32, .28, 1.34)</span>;
+}
+<span class="tok-sel">.stars</span>  { <span class="tok-prop">transition</span>: <span class="tok-val">opacity .6s ease <b>.15s</b></span>; }   <span class="tok-com">/* arrive late */</span>
+<span class="tok-sel">.crater</span> { <span class="tok-prop">transition</span>: <span class="tok-val">background .55s ease <b>.18s</b></span>; } <span class="tok-com">/* later still */</span>
+
+<span class="tok-at">@keyframes</span> <span class="tok-sel">breathe</span> {           <span class="tok-com">/* the sun, alive at rest */</span>
+  <span class="tok-val">0%,100%</span> { <span class="tok-prop">transform</span>: <span class="tok-val">scale(1)</span>;    <span class="tok-prop">opacity</span>: <span class="tok-val">.7</span>; }
+  <span class="tok-val">50%</span>     { <span class="tok-prop">transform</span>: <span class="tok-val">scale(1.14)</span>; <span class="tok-prop">opacity</span>: <span class="tok-val">1</span>; }
+}</code></pre>
+    </div>
+
+    <div class="callout">
+      <div class="tag">⌥ don't skip this</div>
+      <p>Always respect <span class="mono">prefers-reduced-motion</span>. Some people get motion sick. Wrap the big animations so they collapse to a quick fade — the switch still works, it just stops dancing. Accessible <em>is</em> part of the craft.</p>
+    </div>
+  </section>
+
+  <!-- STEP 6: WIRE IT UP -->
+  <section>
+    <span class="eyebrow">Step 6</span>
+    <h2 style="margin-top:16px">Wire it up — the whole script</h2>
+    <p>This is all the JavaScript there is. Flip the attribute; CSS does the rest. And because the page's colours are stored as variables that key off the same <span class="mono">data-theme</span>, one click re-themes everything you're looking at right now.</p>
+    <div class="code">
+      <button class="copy" data-copy>copy</button>
+      <pre><code><span class="tok-sel">const</span> root = document.documentElement;
+<span class="tok-sel">const</span> sw = document.querySelector(<span class="tok-val">'.switch'</span>);
+
+sw.addEventListener(<span class="tok-val">'click'</span>, () =&gt; {
+  <span class="tok-sel">const</span> next = root.dataset.theme === <span class="tok-val">'dark'</span> ? <span class="tok-val">'light'</span> : <span class="tok-val">'dark'</span>;
+  root.dataset.theme = next;                 <span class="tok-com">/* that's it */</span>
+  sw.setAttribute(<span class="tok-val">'aria-checked'</span>, next === <span class="tok-val">'dark'</span>);
+});</code></pre>
+    </div>
+    <div class="callout">
+      <div class="tag">↗ make it yours</div>
+      <p>Try these once it works: start from the visitor's system setting with <span class="mono">@media (prefers-color-scheme: dark)</span>; add a shooting star on the way into night; recolour the sky for a sunset palette; or slow everything down to <span class="mono">1.2s</span> and watch how much more "premium" it suddenly feels.</p>
+    </div>
+  </section>
+
+  <!-- HOW TO MAKE A SERIES FOR THE TEAM -->
+  <section>
+    <span class="eyebrow">For the NextWork team</span>
+    <h2 style="margin-top:16px">How I'd turn this into a whole <em>series</em></h2>
+    <p>This switch isn't a one-off — it's a format. A tiny interaction that teaches one idea, documents itself as it's built, and leaves the learner with a real component to publish. That's the NextWork loop exactly: <strong>build → document → proof.</strong> Here's the template every lesson in the series would follow.</p>
+
+    <div class="beats">
+      <div class="beat"><div class="bn">i</div><div class="bt"><b>One interaction, one concept.</b> The whole switch only teaches transforms &amp; easing. The constraint is what makes it learnable in 30 minutes.</div></div>
+      <div class="beat"><div class="bn">ii</div><div class="bt"><b>Vanilla only.</b> No frameworks. If a beginner can rebuild it from scratch, it belongs in the series.</div></div>
+      <div class="beat"><div class="bn">iii</div><div class="bt"><b>Anatomy first.</b> Name every part before animating. Understanding beats copy-paste.</div></div>
+      <div class="beat"><div class="bn">iv</div><div class="bt"><b>Isolate the craft move.</b> Every lesson has one "secret" section — here, easing + stagger. That's the bit that separates fine from delightful.</div></div>
+      <div class="beat"><div class="bn">v</div><div class="bt"><b>End on a challenge.</b> A "make it yours" prompt so each learner ships a unique variant — instant proof of work for their portfolio.</div></div>
+    </div>
+
+    <p style="margin-top:30px">Drop each one into this same lesson layout — shared brand tokens, shared structure — and the series feels like one cohesive product. Ten interactions I'd build next:</p>
+    <div class="series">
+      <div class="it"><span class="n">01</span><span class="t"><b>Heart / like button</b> — pop, burst, count-up</span></div>
+      <div class="it"><span class="n">02</span><span class="t"><b>Hamburger → close</b> — three lines that morph into an X</span></div>
+      <div class="it"><span class="n">03</span><span class="t"><b>Pull-to-refresh</b> — elastic drag + spinner</span></div>
+      <div class="it"><span class="n">04</span><span class="t"><b>Toast / snackbar</b> — slide in, auto-dismiss</span></div>
+      <div class="it"><span class="n">05</span><span class="t"><b>Progress ring</b> — animated SVG stroke</span></div>
+      <div class="it"><span class="n">06</span><span class="t"><b>Skeleton shimmer</b> — the loading state, done right</span></div>
+      <div class="it"><span class="n">07</span><span class="t"><b>Segmented control</b> — a sliding pill behind tabs</span></div>
+      <div class="it"><span class="n">08</span><span class="t"><b>Animated tab underline</b> — it follows your click</span></div>
+      <div class="it"><span class="n">09</span><span class="t"><b>Accordion</b> — height &amp; chevron, smoothly</span></div>
+      <div class="it"><span class="n">10</span><span class="t"><b>Success confetti</b> — the completion moment</span></div>
+    </div>
+
+    <div class="callout">
+      <div class="tag">why it fits NextWork</div>
+      <p>Micro-interactions are high-delight and low-scope — the perfect bite-size project. Each one teaches "the details users feel," ends in something a learner can show an employer, and stays close to real code the way modern teams actually work. I'd love to build the first few with the lead designer and shape how they're taught.</p>
+    </div>
+  </section>
+
+  <div class="footer">
+    A NextWork-style interaction lesson, built by hand by <strong style="color:var(--text)">Lily Blanch</strong><br>
+    <a href="https://byblanch.framer.website">byblanch.framer.website</a> &nbsp;·&nbsp; <a href="mailto:lilybelleblanch@icloud.com">lilybelleblanch@icloud.com</a>
+  </div>
+</div>
+
+<script>
+  (function(){
+    var root = document.documentElement;
+    var sw = document.getElementById('switch');
+    var labels = document.querySelectorAll('[data-theme-label]');
+    function apply(t){
+      root.dataset.theme = t;
+      sw.setAttribute('aria-checked', t === 'dark');
+      labels.forEach(function(l){ l.textContent = (t === 'dark' ? 'Night' : 'Day'); });
+    }
+    sw.addEventListener('click', function(){
+      apply(root.dataset.theme === 'dark' ? 'light' : 'dark');
+    });
+
+    // copy buttons on code blocks
+    document.querySelectorAll('[data-copy]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var code = btn.parentElement.querySelector('code');
+        var text = code.innerText;
+        navigator.clipboard && navigator.clipboard.writeText(text).then(function(){
+          var old = btn.textContent; btn.textContent = 'copied ✓';
+          setTimeout(function(){ btn.textContent = old; }, 1400);
+        });
+      });
+    });
+  })();
+</script>
+</body>
+</html>
